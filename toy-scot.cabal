@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: cae49c8c382a71df6340c904a4f9d8c192f3769b2fe56345e0a02d9133e7d9c1
+-- hash: d409407809a1bc31c2b2ab0099072732cf99f967c50911b0f9bdbf28dba85e20
 
 name:           toy-scot
 version:        0.1.0.0
@@ -34,6 +34,7 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , transformers
   default-language: Haskell2010
 
 executable toy-scot-exe
@@ -46,6 +47,7 @@ executable toy-scot-exe
   build-depends:
       base >=4.7 && <5
     , toy-scot
+    , transformers
   default-language: Haskell2010
 
 test-suite toy-scot-test
@@ -59,4 +61,5 @@ test-suite toy-scot-test
   build-depends:
       base >=4.7 && <5
     , toy-scot
+    , transformers
   default-language: Haskell2010
