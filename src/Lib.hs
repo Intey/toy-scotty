@@ -2,7 +2,6 @@ module Lib
     ( Route
     , AppState
     , AppStateT
-    , Handler
     , Response
     , Request
     , ActionT
@@ -14,50 +13,64 @@ module Lib
 import qualified Control.Monad.Trans.State.Strict as ST
 import Control.Monad
 import qualified Control.Monad.Trans.Except as Exc
+import Control.Monad.Trans.Reader
+import Data.Maybe (fromMaybe)
+import Control.Monad.Trans.Class (lift)
 
-type Response = Maybe String
+type Response = String
 type Request = String
 
 type ActionError = String
-type ActionT = Exc.Except ActionError Response
+type ActionT = Exc.ExceptT ActionError (Reader Request) Response
 
-type Handler = Request -> ActionT
-type Route = Handler -> Handler
+type Application = String -> String
+type Route = Application -> Application
 
 data AppState = AppState { routes::[Route]}
 type AppStateT = ST.State AppState
 
 -- stolen from client, he-he
 constructResponse :: [String] -> ActionT
-constructResponse = Exc.except . Right . Just . unwords 
+constructResponse = Exc.except . Right . unwords 
 
-runHandler :: Handler -> Request -> ActionT
-runHandler h req = (h req) `Exc.catchE` errorHandler
-
-route :: Handler -> (String -> Bool) -> Route
-route handler1 cond handler2 input_string =
-  if cond input_string then
-    runHandler handler1 input_string
-  else
-    runHandler handler2 input_string
+-- runHandler :: Handler -> Request -> ActionT
+-- runHandler h req = (h req) `Exc.catchE` errorHandler
 
 addRoute' :: Route -> AppState -> AppState
 addRoute' mf s@AppState {routes = mw} = s {routes = mf:mw}
 
-addRoute :: Handler -> (String -> Bool) -> AppStateT ()
+route :: ActionT -> (String -> Bool) -> Route
+route mw pat mw1 input_string =
+  let tryNext = mw1 input_string in
+  if pat input_string
+  then
+    runAction mw input_string
+  else
+    tryNext
+
+runAction :: ActionT -> Request -> Response
+runAction action request =
+  let response = flip runReader request
+                 $ Exc.runExceptT
+                 $ action `Exc.catchE` errorHandler
+      left  = ("There was an error :" ++)
+      right = id
+  in
+    either left right response
+
+addRoute ::
+  Monad m => ActionT -> (String -> Bool) -> ST.StateT AppState m ()
 addRoute mf pat = ST.modify $ \s -> addRoute' (route mf pat) s
 
 -- runMyApp :: Monad m => Handler -> AppState -> String -> m String
-runMyApp :: (Monad m) => Handler -> AppState -> Request -> m ActionT
-runMyApp defaultHandler app_state request = do
-  let output = foldl (flip ($)) defaultHandler (routes app_state) request
-  return output
+runMyApp :: AppState -> Application -> Application
+runMyApp app_state request = foldl (flip ($)) request (routes app_state)
 
-defaultHandler :: Request -> ActionT
-defaultHandler request = constructResponse ["not found handler for request: '", request, "'"]
+defaultHandler :: Request -> Response
+defaultHandler request = "404: '" ++ request ++ "'"
 
 errorHandler :: ActionError -> ActionT
-errorHandler error = Exc.except . Right . Just $ "Got exception: '" ++ error ++ "'"
+errorHandler error = Exc.except . Right $ "500: '" ++ error ++ "'"
 
 userInputLoop :: AppState -> IO ()
 userInputLoop app_state = do
@@ -66,7 +79,7 @@ userInputLoop app_state = do
   putStrLn "(one of 'handler1', 'handler2', 'handler3', 'buggy' or any string for default handling)"
   request <- getLine
   unless (request == "q") $ do
-    let response = runMyApp defaultHandler app_state request :: Maybe ActionT
+    let response = runMyApp app_state defaultHandler request
     print response
     putStrLn ""
     userInputLoop app_state

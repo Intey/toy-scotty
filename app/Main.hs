@@ -1,25 +1,30 @@
     
 import Lib
 import qualified Control.Monad.Trans.Except as Exc
-
+import Control.Monad.Trans.Reader
+import Control.Monad.Trans.Class
 -- client functions
 constructResponse :: [String] -> ActionT
-constructResponse = Exc.except . Right . Just . unwords 
+constructResponse = Exc.except . Right . unwords 
 
-routeHandler1 :: Handler
-routeHandler1 request = constructResponse [
-    request, "request in handler1"]
+routeHandler1 :: ActionT
+routeHandler1 = do
+    request <- lift ask 
+    return $ "200 request in handler1 =" ++ request
 
-routeHandler2 :: Handler
-routeHandler2 request =  constructResponse [
-    request, "request in handler2"]
+routeHandler2 :: ActionT
+routeHandler2 = do
+    request <- lift ask
+    return $ "200 request in handler2 =" ++ request
 
-routeHandler3 :: Handler
-routeHandler3 request = constructResponse [
-    request, "request in handler3"]
+routeHandler3 :: ActionT
+routeHandler3 = do
+    request <- lift ask
+    return $ "200 request in handler3 =" ++ request
 
-buggy :: Handler
-buggy _ = Exc.throwE "Error from buggy"
+buggy :: ActionT
+buggy = do
+    Exc.throwE "Error from buggy"
 
 myApp :: AppStateT ()
 myApp = do
