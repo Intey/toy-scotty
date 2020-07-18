@@ -8,6 +8,7 @@ module Lib
     , ActionError
     , addRoute
     , myScotty
+    , getRequest
     ) where
 
 import qualified Control.Monad.Trans.State.Strict as ST
@@ -19,19 +20,35 @@ import Control.Monad.Trans.Class (lift)
 
 type Response = String
 type Request = String
-
 type ActionError = String
-type ActionT = Exc.ExceptT ActionError (Reader Request) Response
 
+-- Ok, Except needs for try...catch. ReaderT, StateT?
+-- ReaderT just for access Request (ReaderT Request) in Handler(ActionT) with 
+-- do-semantic, like it's global as in flask(python web framework)
+{- @@@
+routeHandler1 = do
+  request <- lift ask 
+  ...
+@@@ -} 
+-- Just for this?
+-- StateT for changing Response with middlewares. Ok.
+type ActionT a = Exc.ExceptT ActionError (ReaderT Request (ST.State Response)) a
+
+-- and now, routeHandler = do { request <- getRequest; ... }
+getRequest :: ActionT Request
+getRequest = lift ask 
+
+-- Why Application? I think it's Handler, but ActionT is Handler
 type Application = String -> String
+
 type Route = Application -> Application
 
 data AppState = AppState { routes::[Route]}
 type AppStateT = ST.State AppState
 
 -- stolen from client, he-he
-constructResponse :: [String] -> ActionT
-constructResponse = Exc.except . Right . unwords 
+-- constructResponse :: [String] -> ActionT ()
+-- constructResponse = Exc.except . Right . unwords 
 
 -- runHandler :: Handler -> Request -> ActionT
 -- runHandler h req = (h req) `Exc.catchE` errorHandler
@@ -39,27 +56,30 @@ constructResponse = Exc.except . Right . unwords
 addRoute' :: Route -> AppState -> AppState
 addRoute' mf s@AppState {routes = mw} = s {routes = mf:mw}
 
-route :: ActionT -> (String -> Bool) -> Route
+route :: ActionT () -> (String -> Bool) -> Route
 route mw pat mw1 input_string =
   let tryNext = mw1 input_string in
   if pat input_string
   then
-    runAction mw input_string
+    fromMaybe "" $ runAction mw input_string
   else
     tryNext
 
-runAction :: ActionT -> Request -> Response
+-- oh, shi.
+-- firstly run ExceptT action with error handling. result will be ReaderT Request (State Response) (Either ActionError ())
+runAction :: ActionT () -> Request -> Maybe Response
 runAction action request =
-  let response = flip runReader request
+  let (a, s) = flip ST.runState ""
+                 $ flip runReaderT request
                  $ Exc.runExceptT
                  $ action `Exc.catchE` errorHandler
-      left  = ("There was an error :" ++)
-      right = id
+      left  = const $ Just "There was an error"
+      right = const $ Just s
   in
-    either left right response
+    either left right a
 
 addRoute ::
-  Monad m => ActionT -> (String -> Bool) -> ST.StateT AppState m ()
+  Monad m => ActionT () -> (String -> Bool) -> ST.StateT AppState m ()
 addRoute mf pat = ST.modify $ \s -> addRoute' (route mf pat) s
 
 -- runMyApp :: Monad m => Handler -> AppState -> String -> m String
@@ -69,8 +89,9 @@ runMyApp app_state request = foldl (flip ($)) request (routes app_state)
 defaultHandler :: Request -> Response
 defaultHandler request = "404: '" ++ request ++ "'"
 
-errorHandler :: ActionError -> ActionT
-errorHandler error = Exc.except . Right $ "500: '" ++ error ++ "'"
+errorHandler :: ActionError -> ActionT ()
+errorHandler error = lift . lift
+  $ ST.modify (\s -> "500" ++ s ++ error ++ " inside middleware func 3")
 
 userInputLoop :: AppState -> IO ()
 userInputLoop app_state = do

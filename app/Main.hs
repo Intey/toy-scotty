@@ -2,29 +2,29 @@
 import Lib
 import qualified Control.Monad.Trans.Except as Exc
 import Control.Monad.Trans.Reader
+import qualified Control.Monad.Trans.State.Strict as ST
+-- import qualified Control.Monad.ST as
 import Control.Monad.Trans.Class
 -- client functions
-constructResponse :: [String] -> ActionT
-constructResponse = Exc.except . Right . unwords 
 
-routeHandler1 :: ActionT
+routeHandler1 :: ActionT ()
 routeHandler1 = do
-    request <- lift ask 
-    return $ "200 request in handler1 =" ++ request
+    request <- getRequest
+    let st = ST.modify (\_ -> ": 200 request in handler1 =" ++ request)
+    lift . lift $ st
 
-routeHandler2 :: ActionT
+routeHandler2 :: ActionT ()
 routeHandler2 = do
-    request <- lift ask
-    return $ "200 request in handler2 =" ++ request
+    request <- getRequest
+    lift . lift $ ST.modify (\s -> s ++ ": 200 request in handler2 =" ++ request)
 
-routeHandler3 :: ActionT
+routeHandler3 :: ActionT ()
 routeHandler3 = do
-    request <- lift ask
-    return $ "200 request in handler3 =" ++ request
+    request <- getRequest
+    lift . lift $ ST.modify (\s -> s ++ ": 200 request in handler3 =" ++ request)
 
-buggy :: ActionT
-buggy = do
-    Exc.throwE "Error from buggy"
+buggy :: ActionT ()
+buggy = Exc.throwE "Error from buggy"
 
 myApp :: AppStateT ()
 myApp = do
